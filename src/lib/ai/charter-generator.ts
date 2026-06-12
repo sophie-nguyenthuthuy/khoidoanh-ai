@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { db, aiGenerations } from "@/lib/db";
 
-import { anthropic, estimateCostUsd, MODEL } from "./client";
+import { complete, estimateCostUsd, type LlmCompletion, MODEL } from "./client";
 import {
   buildCharterPrompt,
   CHARTER_PROMPT_VERSION,
@@ -44,22 +44,15 @@ export async function generateCharter(
 ): Promise<{ charter: CharterOutput; promptVersion: string; model: string }> {
   const started = Date.now();
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 16_000,
-    system: [
-      {
-        type: "text",
-        text: CHARTER_SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-    messages: [{ role: "user", content: buildCharterPrompt(input) }],
+  const response = await complete({
+    system: CHARTER_SYSTEM_PROMPT,
+    user: buildCharterPrompt(input),
+    maxTokens: 16_000,
+    jsonMode: true,
   });
 
   const latencyMs = Date.now() - started;
-  const textBlock = response.content.find((b) => b.type === "text");
-  const rawText = textBlock && "text" in textBlock ? textBlock.text : "";
+  const rawText = response.text;
 
   let parsed: CharterOutput;
   try {
@@ -96,7 +89,7 @@ async function logGeneration(args: {
   userId?: string;
   registrationId?: string;
   latencyMs: number;
-  response: Awaited<ReturnType<typeof anthropic.messages.create>>;
+  response: LlmCompletion;
   input: CharterPromptInput;
   output?: CharterOutput;
   error?: string;

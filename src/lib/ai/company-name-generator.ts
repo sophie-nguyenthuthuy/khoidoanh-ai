@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { aiGenerations, db } from "@/lib/db";
 
-import { anthropic, estimateCostUsd, MODEL } from "./client";
+import { complete, estimateCostUsd, MODEL } from "./client";
 import {
   COMPANY_NAME_PROMPT_VERSION,
   COMPANY_NAME_SYSTEM_PROMPT,
@@ -64,19 +64,15 @@ export async function suggestCompanyNames(input: CompanyNameInput): Promise<Comp
     .filter(Boolean)
     .join("\n");
 
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 2_000,
-    system: [
-      { type: "text", text: COMPANY_NAME_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-    ],
-    messages: [{ role: "user", content: userPrompt }],
+  const response = await complete({
+    system: COMPANY_NAME_SYSTEM_PROMPT,
+    user: userPrompt,
+    maxTokens: 2_000,
+    jsonMode: true,
   });
 
   const latencyMs = Date.now() - started;
-  const textBlock = response.content.find((b) => b.type === "text");
-  const rawText = textBlock && "text" in textBlock ? textBlock.text : "";
-
+  const rawText = response.text;
   const fenced = rawText.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
   const parsed = companyNameOutputSchema.parse(JSON.parse(fenced ? fenced[1]! : rawText.trim()));
 

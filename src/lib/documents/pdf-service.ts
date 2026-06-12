@@ -21,13 +21,17 @@ export async function renderCharterPdfAndStore(registrationId: string) {
 
   const charter = JSON.parse(reg.charterContent);
 
-  const buffer = await renderToBuffer(
-    React.createElement(CharterPdf, {
-      charter,
-      promptVersion: reg.charterPromptVersion ?? "unknown",
-      generatedAt: reg.charterDraftedAt ?? new Date(),
-    }),
-  );
+  // `@react-pdf/renderer`'s `renderToBuffer` signature expects a Document
+  // ReactElement, but the CharterPdf component returns a `Document` at
+  // runtime — the structural-type mismatch is from `@react-pdf/types` being
+  // stricter than the runtime contract. Cast to satisfy the compiler.
+  const charterElement = React.createElement(CharterPdf, {
+    charter,
+    promptVersion: reg.charterPromptVersion ?? "unknown",
+    generatedAt: reg.charterDraftedAt ?? new Date(),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  }) as any;
+  const buffer = await renderToBuffer(charterElement);
 
   const checksum = createHash("sha256").update(buffer).digest("hex");
   const fileName = `dieu-le-${reg.referenceCode}.pdf`;

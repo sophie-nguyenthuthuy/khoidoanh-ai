@@ -1,22 +1,20 @@
 import "./globals.css";
 
 import type { Metadata, Viewport } from "next";
-import { Be_Vietnam_Pro, Plus_Jakarta_Sans } from "next/font/google";
 import { Toaster } from "sonner";
 
 import { cn } from "@/lib/utils";
 
-const sans = Be_Vietnam_Pro({
-  subsets: ["latin", "vietnamese"],
-  weight: ["400", "500", "600", "700"],
-  variable: "--font-sans",
-});
-
-const display = Plus_Jakarta_Sans({
-  subsets: ["latin"],
-  weight: ["600", "700", "800"],
-  variable: "--font-display",
-});
+// `next/font/google` fetches WOFF2 from fonts.gstatic.com at BUILD time.
+// On networks that block Google CDNs (corporate VPN, restrictive proxies,
+// CI without egress), `next build` hangs with ETIMEDOUT and ultimately
+// "Failed to fetch Be Vietnam Pro from Google Fonts". For dev/CI we fall
+// back to system fonts via the same CSS variables so layouts that read
+// `var(--font-sans)` / `var(--font-display)` keep working. Production
+// deployments that DO have CDN egress should restore the next/font block
+// — see git blame on this file for the original import.
+const sans = { variable: "--font-sans" };
+const display = { variable: "--font-display" };
 
 export const metadata: Metadata = {
   title: {

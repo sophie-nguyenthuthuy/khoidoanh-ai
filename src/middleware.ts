@@ -1,6 +1,14 @@
+import NextAuth from "next-auth";
 import { NextResponse } from "next/server";
 
-import { auth } from "@/lib/auth/config";
+import { authConfig } from "@/lib/auth/edge-config";
+
+// IMPORTANT: middleware imports the *edge* auth config only — no DB
+// adapter, no postgres driver. See `src/lib/auth/edge-config.ts` header
+// for the full rationale (TL;DR: pulling DrizzleAdapter into the edge
+// sandbox blows up with `Cannot redefine property: __import_unsupported`
+// on the second evaluation, which makes every request 500 in prod).
+const { auth } = NextAuth(authConfig);
 
 const PROTECTED_PREFIXES = ["/dashboard", "/wizard", "/api/registrations", "/api/ai"];
 

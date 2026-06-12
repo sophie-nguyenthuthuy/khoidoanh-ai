@@ -22,7 +22,7 @@ Luật doanh nghiệp / thuế / lao động Việt Nam thay đổi liên tục 
 - **Next.js 14** App Router, RSC, Server Actions
 - **TypeScript** strict mode
 - **Drizzle ORM** + **PostgreSQL** (Neon / Supabase)
-- **Claude API** (`claude-opus-4-7`) cho sinh điều lệ + tư vấn mã ngành
+- **OSS LLM tự host** (Qwen 2.5 mặc định, qua Ollama/vLLM với OpenAI-compatible endpoint) cho sinh điều lệ + tư vấn mã ngành — dữ liệu founder không rời hạ tầng VN
 - **Auth.js v5** (email OTP + Google)
 - **Stripe** cho thanh toán
 - **Tailwind** + **shadcn/ui**

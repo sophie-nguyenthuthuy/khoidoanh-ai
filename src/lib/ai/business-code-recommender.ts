@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { aiGenerations, businessCodes, db } from "@/lib/db";
 
-import { anthropic, estimateCostUsd, MODEL } from "./client";
+import { complete, estimateCostUsd, MODEL } from "./client";
 import {
   buildBusinessCodesPrompt,
   BUSINESS_CODES_PROMPT_VERSION,
@@ -66,35 +66,21 @@ export async function recommendBusinessCodes(
     )
     .limit(40);
 
-  // Step 2: ask Claude to pick + write detail.
-  const response = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 4_000,
-    system: [
-      {
-        type: "text",
-        text: BUSINESS_CODES_SYSTEM_PROMPT,
-        cache_control: { type: "ephemeral" },
-      },
-    ],
-    messages: [
-      {
-        role: "user",
-        content: buildBusinessCodesPrompt({
-          description: input.description,
-          entityType: input.entityType,
-          foreignInvestment: input.foreignInvestment,
-          candidateCodes: candidates,
-        } satisfies BusinessCodesPromptInput),
-      },
-    ],
+  // Step 2: ask the OSS LLM to pick + write detail.
+  const response = await complete({
+    system: BUSINESS_CODES_SYSTEM_PROMPT,
+    user: buildBusinessCodesPrompt({
+      description: input.description,
+      entityType: input.entityType,
+      foreignInvestment: input.foreignInvestment,
+      candidateCodes: candidates,
+    } satisfies BusinessCodesPromptInput),
+    maxTokens: 4_000,
+    jsonMode: true,
   });
 
   const latencyMs = Date.now() - started;
-  const textBlock = response.content.find((b) => b.type === "text");
-  const rawText = textBlock && "text" in textBlock ? textBlock.text : "";
-
-  const json = extractJson(rawText);
+  const json = extractJson(response.text);
   const parsed = businessCodesOutputSchema.parse(json);
 
   // Step 3: validate every recommended code actually exists in VSIC.
@@ -119,7 +105,7 @@ export async function recommendBusinessCodes(
     latencyMs,
     costUsd: Math.round(estimateCostUsd(MODEL, response.usage) * 1_000_000),
     input: input as unknown as Record<string, unknown>,
-    output: parsed as unknown as Record<string, unknown>,
+    output: parsed as Record<string, unknown>,
   });
 
   return {

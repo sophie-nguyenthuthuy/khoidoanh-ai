@@ -18,6 +18,19 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV SKIP_ENV_VALIDATION=1
+# Build-time placeholder secrets: `next build` traces every route to
+# collect page data, which instantiates the Stripe client at module load
+# of `app/api/stripe/webhook/route.ts`. Without a (well-formed) secret
+# the Stripe SDK throws and the whole build fails. These values are
+# discarded at runtime — operators inject real secrets via .env.local.
+ENV STRIPE_SECRET_KEY=sk_test_buildtime_placeholder
+ENV STRIPE_WEBHOOK_SECRET=whsec_buildtime_placeholder
+ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_buildtime_placeholder
+ENV AUTH_SECRET=buildtime-auth-secret-at-least-32-chars-long
+ENV DATABASE_URL=postgresql://placeholder:placeholder@buildtime.invalid:5432/placeholder
+ENV NEXT_PUBLIC_APP_URL=http://localhost:3000
+ENV UPSTASH_REDIS_REST_URL=https://placeholder.invalid
+ENV UPSTASH_REDIS_REST_TOKEN=placeholder
 RUN pnpm build
 
 # ─── Runner ──────────────────────────────────────────────────────────

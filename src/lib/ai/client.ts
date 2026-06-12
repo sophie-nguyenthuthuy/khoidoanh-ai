@@ -1,49 +1,108 @@
 import "server-only";
 
-import Anthropic from "@anthropic-ai/sdk";
-
 import { env } from "@/env.mjs";
 
-const globalForAnthropic = globalThis as unknown as {
-  anthropic: Anthropic | undefined;
-};
+// All LLM access goes through this module. Backed by an OpenAI-compatible
+// OSS endpoint (Ollama in dev, vLLM / SGLang in production). Default model
+// is Qwen 2.5 (Apache-2.0) — strong on Vietnamese legal prose, JSON-mode
+// reliable, can be self-hosted inside a VN IDC for data sovereignty.
+//
+// The surface intentionally mirrors the relevant slice of Anthropic's API so
+// the three call sites (charter, business-codes, company-name generators)
+// remained a one-token swap on rewire.
 
-export const anthropic =
-  globalForAnthropic.anthropic ??
-  new Anthropic({
-    apiKey: env.ANTHROPIC_API_KEY,
-    maxRetries: 2,
-    timeout: 120_000,
-  });
+export const MODEL = env.LLM_MODEL;
 
-if (env.NODE_ENV !== "production") globalForAnthropic.anthropic = anthropic;
+export interface LlmUsage {
+  input_tokens: number;
+  output_tokens: number;
+  cache_read_input_tokens?: number | null;
+  cache_creation_input_tokens?: number | null;
+}
 
-export const MODEL = env.ANTHROPIC_MODEL;
+export interface LlmCompletion {
+  text: string;
+  usage: LlmUsage;
+  model: string;
+}
 
-// Per-1M-token prices (USD) — update when Anthropic changes pricing.
-// Used only for cost tracking inside ai_generations rows.
-export const PRICING_USD_PER_MTOK = {
-  "claude-opus-4-7": { input: 15, output: 75, cacheWrite: 18.75, cacheRead: 1.5 },
-  "claude-sonnet-4-6": { input: 3, output: 15, cacheWrite: 3.75, cacheRead: 0.3 },
-  "claude-haiku-4-5-20251001": { input: 1, output: 5, cacheWrite: 1.25, cacheRead: 0.1 },
-} as const;
+export interface CompleteArgs {
+  system: string;
+  user: string;
+  maxTokens: number;
+  temperature?: number;
+  jsonMode?: boolean;
+}
 
-export function estimateCostUsd(
-  model: string,
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_creation_input_tokens?: number | null;
-    cache_read_input_tokens?: number | null;
-  },
-): number {
-  const p = PRICING_USD_PER_MTOK[model as keyof typeof PRICING_USD_PER_MTOK];
-  if (!p) return 0;
+export async function complete(args: CompleteArgs): Promise<LlmCompletion> {
+  const baseUrl = env.LLM_BASE_URL.replace(/\/$/, "");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+
+  let res: Response;
+  try {
+    res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(env.LLM_API_KEY ? { authorization: `Bearer ${env.LLM_API_KEY}` } : {}),
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: args.maxTokens,
+        temperature: args.temperature ?? 0.2,
+        ...(args.jsonMode ? { response_format: { type: "json_object" } } : {}),
+        messages: [
+          { role: "system", content: args.system },
+          { role: "user", content: args.user },
+        ],
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`LLM endpoint ${res.status}: ${body.slice(0, 500)}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: { message: { content: string } }[];
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      prompt_tokens_details?: { cached_tokens?: number };
+    };
+  };
+  const text = data.choices?.[0]?.message?.content ?? "";
+  const usage = data.usage ?? {};
+
+  return {
+    text,
+    usage: {
+      input_tokens: usage.prompt_tokens ?? 0,
+      output_tokens: usage.completion_tokens ?? 0,
+      cache_read_input_tokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
+      cache_creation_input_tokens: 0,
+    },
+    model: MODEL,
+  };
+}
+
+// Cost tracking. Self-hosted models have no per-token bill, but the
+// `ai_generations` rows still record a USD figure for parity with prior
+// data and for cross-tenant cost attribution when an operator runs on
+// shared GPU infrastructure. Override `LLM_PRICING_USD_PER_MTOK_*` in env
+// if you want amortised-GPU pricing baked in.
+const COST_INPUT_USD = Number(process.env.LLM_PRICING_USD_PER_MTOK_INPUT ?? "0");
+const COST_OUTPUT_USD = Number(process.env.LLM_PRICING_USD_PER_MTOK_OUTPUT ?? "0");
+
+export function estimateCostUsd(_model: string, usage: LlmUsage): number {
   const M = 1_000_000;
   return (
-    (usage.input_tokens * p.input) / M +
-    (usage.output_tokens * p.output) / M +
-    ((usage.cache_creation_input_tokens ?? 0) * p.cacheWrite) / M +
-    ((usage.cache_read_input_tokens ?? 0) * p.cacheRead) / M
+    (usage.input_tokens * COST_INPUT_USD) / M +
+    (usage.output_tokens * COST_OUTPUT_USD) / M
   );
 }

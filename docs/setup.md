@@ -20,7 +20,7 @@ cp .env.example .env.local
 Điền các biến môi trường trong `.env.local`. Tối thiểu cần:
 - `DATABASE_URL` — chỉ Postgres
 - `AUTH_SECRET` — `openssl rand -base64 32`
-- `ANTHROPIC_API_KEY`
+- `LLM_BASE_URL` (mặc định Ollama: `http://localhost:11434/v1`) — tự host Qwen 2.5 hoặc model OSS khác
 - `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET`
 - `UPSTASH_REDIS_REST_URL` + token
 - `NEXT_PUBLIC_APP_URL=http://localhost:3000`
